@@ -292,7 +292,9 @@ class GLoMo():
         self.saver.restore(self.sess, ckpt_dir)
         print('Loading weights successful...')
 
-model = GLoMo(config) 
-model.Graph_Predictor()
-model.Feature_Predictor()
-model.train(generator_train, generator_valid)
+
+if __name__ == '__main__':
+    model = GLoMo(config) 
+    model.Graph_Predictor()
+    model.Feature_Predictor()
+    model.train(generator_train, generator_valid)
