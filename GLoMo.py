@@ -62,7 +62,6 @@ class GLoMo():
         
         W_k = tf.Variable(tf.ones([self.sentence_length, 128]), name='W_key_{}'.format(idx))
         W_q = tf.Variable(tf.ones([self.sentence_length, 128]), name='W_query_{}'.format(idx))
-        
         key_feature = tf.einsum('ijk,jk -> ijk', key_feature, W_k, name = 'key_feature_matmul_{}'.format(idx))
         query_feature = tf.einsum('ijk,jk -> ijk', query_feature, W_q, name = 'query_feature_matmul_{}'.format(idx))
         query_feature = tf.transpose(query_feature, [0,2,1])
@@ -73,7 +72,7 @@ class GLoMo():
 
         graph = tf.nn.relu(graph)
         graph = tf.square(graph)
-        sum_graph = tf.reduce_sum(graph, axis=2, keep_dims=True)
+        sum_graph = tf.reduce_sum(graph, axis=2, keepdims=True)
         graph = tf.divide(graph, sum_graph)
         
         return graph
@@ -162,7 +161,9 @@ class GLoMo():
                 else:
                     # Employ linear dense layer with residual shortcut
                     for i in range(len(self.using_graph_at)):
-                        inputs = tf.matmul(inputs, self.graphs[i])
+                        # graphs = 5x (None, 1000, 1000)
+                        # inputs = (None, 1000, 300)
+                        inputs = tf.matmul(self.graphs[i], inputs) # (None, 1000, 300)
                         pre_state = inputs
                         if self.linear_activation == 'relu':
                             inputs = tf.layers.dense(
@@ -187,7 +188,7 @@ class GLoMo():
                         prediction = tf.layers.dense(inputs, self.num_classes, reuse=True, name='_prediction_dense')
                     predictions.append(tf.expand_dims(prediction[:, -1, :], axis=1))
 
-                log_predictions = tf.nn.softmax(tf.concat(predictions, axis=1), dim=-1)
+                log_predictions = tf.nn.softmax(tf.concat(predictions, axis=1), axis=-1)
                 max_log_preds = tf.reduce_max(log_predictions, axis=-1)
                 self.max_log_preds = max_log_preds
 
@@ -202,6 +203,7 @@ class GLoMo():
 
         train_target = tf.negative(self.max_log_preds)
         train_var_list = self.set_trainable(train_mode)
+
         train_op = tf.train.GradientDescentOptimizer(
             learning_rate=self.learning_rate).minimize(train_target, var_list=train_var_list) \
             if self.optimizer == 'sgd' else tf.train.AdamOptimizer(
@@ -262,9 +264,10 @@ class GLoMo():
         Training downstream will only allow gradients to back propagate to downstream networks.
         :return:
         """
+
         if train_mode == 'graph':
-            tf.add_to_collection('train_var_list', tf.get_collection(self.graph_scope))
-            tf.add_to_collection('train_var_list', tf.get_collection(self.feature_scope))
+            tf.add_to_collection('train_var_list', tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.graph_scope))
+            tf.add_to_collection('train_var_list', tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.feature_scope))
             return tf.get_collection('train_var_list')
         elif train_mode == 'downstream':
             return []
