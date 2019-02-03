@@ -25,6 +25,7 @@ class GLoMo():
         self.evaluation_per_epoch = config.EVALUATION_PER_EPOCH
         self.evaluation_runs = config.EVALUATION_RUNS
         self.sentence_length = config.SENTENCE_LENGTH
+        self.vocab_size = config.VOCAB_SIZE
 
         self.key_cnn_layers = config.KEY_CNN_LAYERS
         self.query_cnn_layers = config.QUERY_CNN_LAYERS
@@ -47,8 +48,13 @@ class GLoMo():
         self.prediction_length = config.PREDICTION_LENGTH
         ### Net inputs, shared by both feature predictor and graph predictor
         ### Assuming has shape: [batch, num_steps, channels]
-        self.inputs = tf.placeholder(
-            dtype=tf.float32, shape=(None, self.sentence_length, self.embedding_dims))
+        # self.inputs = tf.placeholder(
+        #     dtype=tf.int32, shape=(None, self.sentence_length, self.embedding_dims))
+        self.inputs = tf.placeholder(tf.int32, shape=(self.batch_size, self.sentence_length))
+        # embeding matrix of words
+        self.embedding_matrix = np.random.random([self.vocab_size, self.embedding_dims]).astype(np.float32)
+        
+        self.embedding = tf.reshape(tf.nn.embedding_lookup(self.embedding_matrix, self.inputs, name='embedding_layer_graph'), [self.batch_size, self.sentence_length, self.embedding_dims])
 
     def Calculate_Graph(self, key_feature, query_feature, idx):
         """
@@ -60,10 +66,11 @@ class GLoMo():
         :return: relation graph: [batch_size, channels, channels]
         """
         
-        W_k = tf.Variable(tf.ones([self.sentence_length, 128]), name='W_key_{}'.format(idx))
-        W_q = tf.Variable(tf.ones([self.sentence_length, 128]), name='W_query_{}'.format(idx))
-        key_feature = tf.einsum('ijk,jk -> ijk', key_feature, W_k, name = 'key_feature_matmul_{}'.format(idx))
-        query_feature = tf.einsum('ijk,jk -> ijk', query_feature, W_q, name = 'query_feature_matmul_{}'.format(idx))
+        W_k = tf.Variable(tf.ones([self.sentence_length, 128],dtype=tf.float32), name='W_key_{}'.format(idx))
+        W_q = tf.Variable(tf.ones([self.sentence_length, 128],dtype=tf.float32), name='W_query_{}'.format(idx))
+
+        key_feature = tf.einsum('ijk,jk->ijk', key_feature, W_k, name = 'key_feature_matmul_{}'.format(idx))
+        query_feature = tf.einsum('ijk,jk->ijk', query_feature, W_q, name = 'query_feature_matmul_{}'.format(idx))
         query_feature = tf.transpose(query_feature, [0,2,1])
         
         graph = tf.add(
@@ -78,7 +85,7 @@ class GLoMo():
         return graph
 
 
-    def Graph_Predictor(self):
+    def Predictor(self):
         """
         To using CNN on 3-dimensions embedding inputs, we have to add a new dimension on inputs
         Here the original inputs is [batch_size, num_steps, channels], we convert it into
@@ -87,10 +94,6 @@ class GLoMo():
         :return:
         """
         with tf.variable_scope(self.graph_scope):
-            # graph_inputs = tf.expand_dims(self.inputs, axis=1)
-            # assert tf.shape(graph_inputs)[0] > 0, 'Inputs must have at least 1 batch size'
-            # assert tf.shape(graph_inputs)[2] > 0, 'Inputs must have a length greater than 1'
-            # assert tf.shape(graph_inputs)[3] > 0, 'Inputs must have at least 1 channels'
 
             assert self.graph_layers == 'every' if isinstance(self.graph_layers, str) else \
                 len(self.graph_layers) > 0 if isinstance(self.graph_layers, list) else False, \
@@ -98,100 +101,47 @@ class GLoMo():
 
             key_cnn_groups = []
             query_cnn_groups = []
-            key_temp = self.inputs
-            query_temp = self.inputs
+            
+            key_temp = self.embedding
+            query_temp = self.embedding
+            inputs = self.embedding
 
             for i in range(self.key_cnn_layers):
                 key_temp = Conv1D(
-                    key_temp, 128, 3,
+                    key_temp, 128, 5,
                     1, 'SAME', 1, False, 'relu', False, 'KeyCNN_1_{}'.format(i))
-                key_temp = Conv1D(
-                    key_temp, 128, 1,
-                    1, 'SAME', 1, False, 'relu', False, 'KeyCNN_2_{}'.format(i))
                 key_cnn_groups.append(key_temp)
 
                 query_temp = Conv1D(
-                    query_temp, 128, 3,
+                    query_temp, 128, 5,
                     1, 'SAME', 1, False, 'relu', False, 'QueryCNN_1_{}'.format(i))
-                query_temp = Conv1D(
-                    query_temp, 128, 1,
-                    1, 'SAME', 1, False, 'relu', False, 'QueryCNN_2_{}'.format(i))
                 query_cnn_groups.append(query_temp)
             
-            graphs = []
-            if self.graph_layers == 'every':
-                for i in range(len(key_cnn_groups)):
-                    graphs.append(self.Calculate_Graph(key_cnn_groups[i], query_cnn_groups[i], i))
+                graphs = self.Calculate_Graph(key_cnn_groups[i], query_cnn_groups[i], i)
 
-            else:
-                for i in self.graph_layers:
-                    if i >= 1:
-                        graphs.append(self.Calculate_Graph(key_cnn_groups[i - 1], query_cnn_groups[i - 1], i))
+                inputs = tf.matmul(graphs, inputs) # (None, 1000, 300)
+                        
+                inputs = tf.layers.dense(
+                        inputs, self.embedding_dims, activation=tf.nn.relu,
+                        use_bias=self.linear_bias, name='_{}_linear'.format(i))
 
-            print('----------------------------')
-            print(graphs)
-            print('----------------------------')
-            self.graphs = graphs
+        with tf.variable_scope('finalRNN_'):
+            cell = tf.contrib.rnn.BasicLSTMCell(self.embedding_dims)
+            predictions = []
 
+            for i in range(self.prediction_length):
 
-    def Feature_Predictor(self):
-        """
-
-        :return:
-        """
-        assert self.using_graph_at == 'every' if isinstance(self.using_graph_at, str) else \
-            len(self.using_graph_at) == len(self.graph_layers) if isinstance(self.using_graph_at, list) else False, \
-            'Feature Predictor must use the same layer\'s graph as generated in graph predictor.'
-
-        for i in range(len(self.using_graph_at)):
-            if self.using_graph_at[i] != self.graph_layers[i]:
-                raise ValueError(
-                    'Feature Predictor must use the same layer\'s graph as generated in graph predictor.')
-
-        with tf.variable_scope(self.feature_scope):
-            inputs = self.inputs
-            with tf.variable_scope('_layersRNN'):
-                if self.using_rnn_at_each_graph:
-                    for i in range(len(self.using_graph_at)):
-                        cell = tf.nn.rnn_cell.LSTMCell(num_units=self.embedding_dims, state_is_tuple=True)
-                        cell = tf.nn.rnn_cell.MultiRNNCell(cells=[cell] * self.rnn_layers, state_is_tuple=True)
-                        this_state = cell.zero_state(self.batch_size, dtype=tf.float32)
-                        inputs = tf.matmul(inputs, self.graphs[i])
-                        inputs, this_state = tf.nn.dynamic_rnn(inputs = inputs, initial_state = this_state, cell = cell)
+                inputs,(_, _) = tf.nn.dynamic_rnn(inputs=inputs, cell=cell, dtype=tf.float32)
+                temp = tf.layers.flatten(inputs)
+                if i == 0:
+                    prediction = tf.layers.dense(temp, self.num_classes, reuse=False, name='_prediction_dense'+str(i))
                 else:
-                    # Employ linear dense layer with residual shortcut
-                    for i in range(len(self.using_graph_at)):
-                        # graphs = 5x (None, 1000, 1000)
-                        # inputs = (None, 1000, 300)
-                        inputs = tf.matmul(self.graphs[i], inputs) # (None, 1000, 300)
-                        pre_state = inputs
-                        if self.linear_activation == 'relu':
-                            inputs = tf.layers.dense(
-                                inputs, self.embedding_dims, activation=tf.nn.relu,
-                                use_bias=self.linear_bias, name='_{}_linear'.format(i))
-                        else:
-                            inputs = tf.layers.dense(
-                                inputs, self.embedding_dims, activation=None,
-                                use_bias=self.linear_bias, name='_{}_linear'.format(i))
-                        shortcut = tf.multiply(self.linear_shortcut_rate, pre_state)
-                        inputs = tf.add(inputs, shortcut)
-            with tf.variable_scope('_finalRNN'):
-                cell = tf.nn.rnn_cell.LSTMCell(num_units=self.embedding_dims, state_is_tuple=True)
-                cell = tf.nn.rnn_cell.MultiRNNCell(cells=[cell] * self.rnn_layers, state_is_tuple=True)
-                this_state = cell.zero_state(self.batch_size, dtype=tf.float32)
-                predictions = []
-                for i in range(self.prediction_length):
-                    inputs, this_state = tf.nn.dynamic_rnn(inputs = inputs, initial_state = this_state, cell = cell)
-                    if i == 0:
-                        prediction = tf.layers.dense(inputs, self.num_classes, reuse=False, name='_prediction_dense')
-                    else:
-                        prediction = tf.layers.dense(inputs, self.num_classes, reuse=True, name='_prediction_dense')
-                    predictions.append(tf.expand_dims(prediction[:, -1, :], axis=1))
+                    prediction = tf.layers.dense(temp, self.num_classes, reuse=False, name='_prediction_dense'+str(i))
+                predictions.append(prediction)
 
-                log_predictions = tf.nn.softmax(tf.concat(predictions, axis=1), axis=-1)
-                max_log_preds = tf.reduce_max(log_predictions, axis=-1)
-                self.max_log_preds = max_log_preds
-
+            log_predictions = tf.nn.softmax(predictions, axis=-1)
+            max_log_preds = tf.reduce_max(log_predictions, axis=-1)
+            self.max_log_preds = max_log_preds
 
     def train(self, train_generator, valid_generator, load_mode=None, load_dir=None, train_mode='graph'):
         """
@@ -217,6 +167,7 @@ class GLoMo():
 
         with tf.Session() as self.sess:
             self.saver = tf.train.Saver()
+            self.sess.run(tf.global_variables_initializer())
             if load_mode == 'last':
                 self.load_checkpoints(load_dir=load_dir)
             for epoch in range(self.epochs):
@@ -226,6 +177,7 @@ class GLoMo():
                 for iters in range(self.iter_per_epo):
                     train_data = next(train_generator)
                     feed_dict = {self.inputs: train_data}
+                    
                     this_loss, _ = self.sess.run([loss, train_op], feed_dict=feed_dict)
 
                     init_loss += this_loss
@@ -248,6 +200,7 @@ class GLoMo():
                     for i in range(self.evaluation_runs):
                         valid_data = next(valid_generator)
                         feed_dict = {self.inputs: valid_data}
+
                         this_loss = self.sess.run(loss, feed_dict=feed_dict)
                         init_loss += this_loss
                         percent = round(1.0 * i / self.evaluation_runs * 100, 2)
@@ -298,6 +251,5 @@ class GLoMo():
 
 if __name__ == '__main__':
     model = GLoMo(config) 
-    model.Graph_Predictor()
-    model.Feature_Predictor()
+    model.Predictor()
     model.train(generator_train, generator_valid)

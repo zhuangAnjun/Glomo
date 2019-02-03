@@ -3,7 +3,7 @@ class Config():
         # Network basic settings
         self.BATCH_SIZE = 32
         self.EMBEDDING_DIMS = 300
-        self.NUM_CLASSES = 1000
+        self.NUM_CLASSES = 500
         self.LEARNING_RATE = 0.01
         self.MOMENTUM = 0.9
         self.DEFAULT_OPTIMIZER = 'sgd'
@@ -11,8 +11,8 @@ class Config():
         self.ITERATION_PER_EPOCH = 10000
         self.EVALUATION_PER_EPOCH = True
         self.EVALUATION_RUNS = 500
-        self.SENTENCE_LENGTH = 1000
-
+        self.SENTENCE_LENGTH = 500
+        self.VOCAB_SIZE = 30000
         self.CHECKPOINT_DIR = '../experiments/ckpts/'
         self.LOG_DIR = '../experiments/logs/'
 
