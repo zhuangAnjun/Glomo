@@ -46,56 +46,45 @@ def process_article(article, word_to_id, max_length=config.SENTENCE_LENGTH):
 
     return x_pad
 
+# get all articles
+def get_articles(data_train, vocab_dir):
+    article = []
+    flag = ['=', '\n', ' ']
+    word, word_to_id = read_vocab(vocab_dir)
+    with open(data_train,'r',encoding='utf8') as file:
+        lines = file.readlines()
+        for line in lines:
+            if len(line)<=1:
+                continue
+            if line[1] in flag:
+                continue
+            line = line.split()
+            article.append(line)
+
+        article = process_article(article, word_to_id)
+                
+    return article
+
 
 def generator_train(data_train, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
-    num=0
-    article = []
-    flag = ['=', '\n', ' ']
 
-    word, word_to_id = read_vocab(vocab_dir)
-
+    articles = get_articles(data_train, vocab_dir)
     while True:
-        with open(data_train,'r',encoding='utf8') as file:
-            lines = file.readlines()
-            for line in lines:
-                if len(line)<=1:
-                    continue
-                if line[1] in flag:
-                    continue
-                line = line.split()
-                article.append(line)
-                num = num+1
-                if num%batch_size == 0:
-
-                    article = process_article(article, word_to_id)
-                    yield np.array(article)
-
-                    article = []
+        for i in range(0, len(articles), batch_size):
+            temp = np.array(articles[i:i+batch_size])
+            np.random.shuffle(temp)
+            yield temp
 
 def generator_valid(data_val, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
-    num=0
-    article = []
-    flag = ['=', '\n', ' ']
-
-    word, word_to_id = read_vocab(vocab_dir)
+    articles = get_articles(data_val, vocab_dir)
 
     while True:
-        with open(data_val,'r') as file:
-            lines = file.readlines()
-            for line in lines:
-                if line[1] in flag:
-                    continue;
-                line = line.split()
-                article.append(line)
-                num = num+1
-                if num%batch_size == 0:
-
-                    article = process_article(article, word_to_id)
-                    yield np.array(article)
-
-                    article = []
+        for i in range(0, len(articles), batch_size):
+            temp = np.array(articles[i:i+batch_size])
+            np.random.shuffle(temp)
+            yield temp
 
 # 先建立词表
 # build_vocab(data_dir, vocab_dir)
