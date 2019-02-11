@@ -74,7 +74,7 @@ def generator_train(data_train, vocab_dir, batch_size=config.BATCH_SIZE):
     while True:
         # Remove the last data with insufficient batchsize in axis 0 
         for i in range(len(data_gen) - 1):
-            yield data_gen[i][0]
+            yield data_gen[i][0][:,0,:]
 
 def generator_valid(data_val, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
@@ -83,7 +83,7 @@ def generator_valid(data_val, vocab_dir, batch_size=config.BATCH_SIZE):
     while True:
         # Remove the last data with insufficient batchsize in axis 0 
         for i in range(len(data_gen) - 1):
-            yield data_gen[i][0]
+            yield data_gen[i][0][:,0,:]
 
 # 先建立词表
 # build_vocab(data_dir, vocab_dir)
