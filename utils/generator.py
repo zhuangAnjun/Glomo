@@ -70,20 +70,21 @@ def generator_train(data_train, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
 
     articles = get_articles(data_train, vocab_dir)
-    for i in range(int(len(articles)/batch_size)+100):
-        rand = np.random.randint(0, len(articles), size=batch_size)
-        temp = np.array(articles[rand])
-        np.random.shuffle(temp)
-        yield temp
+    while True:
+        for i in range(len(articles)//batch_size+100):
+            rand = np.random.randint(0, len(articles), size=batch_size)
+            temp = np.array(articles[rand])
+            np.random.shuffle(temp)
+            yield temp
 
 def generator_valid(data_val, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
     articles = get_articles(data_val, vocab_dir)
-
-    for i in range(0, len(articles)-batch_size, batch_size):
-        temp = np.array(articles[i:i+batch_size])
-        np.random.shuffle(temp)
-        yield temp
+    while True:
+        for i in range(0, len(articles)-batch_size, batch_size):
+            temp = np.array(articles[i:i+batch_size])
+            np.random.shuffle(temp)
+            yield temp
 
 # 先建立词表
 # build_vocab(data_dir, vocab_dir)
