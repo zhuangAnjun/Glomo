@@ -2,13 +2,14 @@ import numpy as np
 import keras
 import os
 from collections import Counter
+from configs.config import c as config
 
 home = os.getcwd()
 data_dir = os.path.join(home, "datasets", "wiki", "wiki2_train")
 vocab_dir = os.path.join(home, "data", "vocb")
 
 # build vocabulary
-def build_vocab(data_dir, vocab_dir, vocab_size=20000):
+def build_vocab(data_dir, vocab_dir, vocab_size=config.VOCAB_SIZE):
     """根据训练集构建词汇表，存储"""
     data_train = open(data_dir,'r',encoding='utf8').readlines();
     all_data = []
@@ -33,66 +34,56 @@ def read_vocab(vocab_dir):
     return words, word_to_id
 
 
-def process_article(article, word_to_id, max_length=1000):
+def process_article(article, word_to_id, max_length=config.SENTENCE_LENGTH):
     """将文件转换为id表示"""
 
     data_id = []
     for i in range(len(article)):
-        data_id.append([word_to_id[x] for x in article[i] if x in word_to_id])
+        data_id.append([int(word_to_id[x]) for x in article[i] if x in word_to_id])
 
     # 使用keras提供的pad_sequences来将文本pad为固定长度
     x_pad = keras.preprocessing.sequence.pad_sequences(data_id, max_length)
 
     return x_pad
 
-
-def generator_train(data_train, vocab_dir, batch_size=32):
-    """ 生成器 """
-    num=0
+# get all articles
+def get_articles(data_train, vocab_dir):
     article = []
     flag = ['=', '\n', ' ']
-
     word, word_to_id = read_vocab(vocab_dir)
+    with open(data_train,'r',encoding='utf8') as file:
+        lines = file.readlines()
+        for line in lines:
+            if len(line)<=1:
+                continue
+            if line[1] in flag:
+                continue
+            line = line.split()
+            article.append(line)
 
-    while True:
-        with open(data_train,'r') as file:
-            lines = file.readlines()
-            for line in lines:
-                if line[1] in flag:
-                    continue;
-                line = line.split()
-                article.append(line)
-                num = num+1
-                if num%batch_size == 0:
+        article = process_article(article, word_to_id)
+                
+    return article
 
-                    article = np.array(process_article(article, word_to_id));
-                    yield article
 
-                    article = []
-
-def generator_valid(data_val, vocab_dir, batch_size=64):
+def generator_train(data_train, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
-    num=0
-    article = []
-    flag = ['=', '\n', ' ']
 
-    word, word_to_id = read_vocab(vocab_dir)
+    articles = get_articles(data_train, vocab_dir)
+    for i in range(int(len(articles)/batch_size)+100):
+        rand = np.random.randint(0, len(articles), size=batch_size)
+        temp = np.array(articles[rand])
+        np.random.shuffle(temp)
+        yield temp
 
-    while True:
-        with open(data_val,'r') as file:
-            lines = file.readlines()
-            for line in lines:
-                if line[1] in flag:
-                    continue;
-                line = line.split()
-                article.append(line)
-                num = num+1
-                if num%batch_size == 0:
+def generator_valid(data_val, vocab_dir, batch_size=config.BATCH_SIZE):
+    """ 生成器 """
+    articles = get_articles(data_val, vocab_dir)
 
-                    article = np.array(process_article(article, word_to_id));
-                    yield article
-
-                    article = []
+    for i in range(0, len(articles)-batch_size, batch_size):
+        temp = np.array(articles[i:i+batch_size])
+        np.random.shuffle(temp)
+        yield temp
 
 # 先建立词表
-build_vocab(data_dir, vocab_dir)
+# build_vocab(data_dir, vocab_dir)
