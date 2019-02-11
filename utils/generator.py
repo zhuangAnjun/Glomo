@@ -3,6 +3,7 @@ import keras
 import os
 from collections import Counter
 from configs.config import c as config
+from keras.preprocessing.sequence import TimeseriesGenerator
 
 home = os.getcwd()
 data_dir = os.path.join(home, "datasets", "wiki", "wiki2_train")
@@ -68,23 +69,21 @@ def get_articles(data_train, vocab_dir):
 
 def generator_train(data_train, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
-
     articles = get_articles(data_train, vocab_dir)
+    data_gen = TimeseriesGenerator(articles, np.zeros(articles.shape[0]), length=1, batch_size=config.BATCH_SIZE)
     while True:
-        for i in range(len(articles)//batch_size+100):
-            rand = np.random.randint(0, len(articles), size=batch_size)
-            temp = np.array(articles[rand])
-            np.random.shuffle(temp)
-            yield temp
+        # Remove the last data with insufficient batchsize in axis 0 
+        for i in range(len(data_gen) - 1):
+            yield data_gen[i][0]
 
 def generator_valid(data_val, vocab_dir, batch_size=config.BATCH_SIZE):
     """ 生成器 """
     articles = get_articles(data_val, vocab_dir)
+    data_gen = TimeseriesGenerator(articles, np.zeros(articles.shape[0]), length=1, batch_size=config.BATCH_SIZE)
     while True:
-        for i in range(0, len(articles)-batch_size, batch_size):
-            temp = np.array(articles[i:i+batch_size])
-            np.random.shuffle(temp)
-            yield temp
+        # Remove the last data with insufficient batchsize in axis 0 
+        for i in range(len(data_gen) - 1):
+            yield data_gen[i][0]
 
 # 先建立词表
 # build_vocab(data_dir, vocab_dir)
